@@ -150,7 +150,6 @@ module ActsAsParanoid
 
           @_trigger_destroy_callback = true
 
-          stale_paranoid_value
           @destroyed = true
           freeze
         end
