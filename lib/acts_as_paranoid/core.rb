@@ -4,6 +4,12 @@ module ActsAsParanoid
   module Core
     def self.included(base)
       base.extend ClassMethods
+      if ActiveRecord::VERSION::MAJOR == 5
+        base.send(:alias_method, :committed_without_paranoid!, :committed!)
+        base.send(:alias_method, :committed!, :committed_with_paranoid!)
+        base.send(:alias_method, :remember_transaction_record_state_without_paranoid, :remember_transaction_record_state)
+        base.send(:alias_method, :remember_transaction_record_state, :remember_transaction_record_state_with_paranoid)
+      end
     end
 
     module ClassMethods
@@ -142,6 +148,8 @@ module ActsAsParanoid
             decrement_counters_on_associations
           end
 
+          @_trigger_destroy_callback = true
+
           stale_paranoid_value
           @destroyed = true
           freeze
@@ -253,6 +261,14 @@ module ActsAsParanoid
 
     alias destroyed_fully? deleted_fully?
 
+    def committed_with_paranoid!(should_run_callbacks: true)
+      committed_without_paranoid!(should_run_callbacks: should_run_callbacks)
+    ensure
+      if defined?(@_trigger_destroy_callback) && !@_trigger_destroy_callback.nil? && !@destroyed && deleted?
+        @_trigger_destroy_callback = nil
+      end
+    end
+
     private
 
     def get_association_scope(reflection:)
@@ -301,6 +317,19 @@ module ActsAsParanoid
     def stale_paranoid_value
       self.paranoid_value = self.class.delete_now_value
       clear_attribute_changes([self.class.paranoid_column])
+    end
+
+    if ActiveRecord::VERSION::MAJOR == 5
+      def remember_transaction_record_state_with_paranoid
+        remember_transaction_record_state_without_paranoid
+        remember_trigger_destroy_callback_before_last_commit
+      end
+
+      def remember_trigger_destroy_callback_before_last_commit
+        if _committed_already_called && defined?(@_trigger_destroy_callback) && !@_trigger_destroy_callback.nil? && !@destroyed && deleted?
+          @_trigger_destroy_callback = nil
+        end
+      end
     end
   end
 end

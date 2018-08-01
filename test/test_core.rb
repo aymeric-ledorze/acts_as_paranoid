@@ -366,21 +366,32 @@ class ParanoidTest < ParanoidBaseTest
       @paranoid_with_callback.destroy
     end
 
-    assert @paranoid_with_callback.called_before_destroy
-    assert @paranoid_with_callback.called_after_destroy
-    assert @paranoid_with_callback.called_after_commit_on_destroy
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
+  end
+
+  def test_paranoid_destroy_destroy_callbacks
+    @paranoid_with_callback = ParanoidWithCallback.first
+    ParanoidWithCallback.transaction do
+      @paranoid_with_callback.destroy.destroy
+    end
+
+    assert_equal 2, @paranoid_with_callback.called_before_destroy
+    assert_equal 2, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
   end
 
   def test_hard_destroy_callbacks
     @paranoid_with_callback = ParanoidWithCallback.first
 
     ParanoidWithCallback.transaction do
-      @paranoid_with_callback.destroy!
+      @paranoid_with_callback.destroy_fully!
     end
 
-    assert @paranoid_with_callback.called_before_destroy
-    assert @paranoid_with_callback.called_after_destroy
-    assert @paranoid_with_callback.called_after_commit_on_destroy
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
   end
 
   def test_recovery_callbacks
@@ -389,22 +400,71 @@ class ParanoidTest < ParanoidBaseTest
     ParanoidWithCallback.transaction do
       @paranoid_with_callback.destroy
 
-      assert_nil @paranoid_with_callback.called_before_recover
-      assert_nil @paranoid_with_callback.called_after_recover
+      assert_equal 1, @paranoid_with_callback.called_before_destroy
+      assert_equal 1, @paranoid_with_callback.called_after_destroy
+      assert_equal 0, @paranoid_with_callback.called_after_commit_on_destroy
+      assert_equal 0, @paranoid_with_callback.called_before_recover
+      assert_equal 0, @paranoid_with_callback.called_after_recover
 
       @paranoid_with_callback.recover
     end
 
-    assert @paranoid_with_callback.called_before_recover
-    assert @paranoid_with_callback.called_after_recover
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    # whether or not the after_destroy_commit callback should be called if the record is recovered is debatable
+    # for now, ActiveRecord versions >= 5.2.0 will call it and the other versions will not
+    assert_includes 0..1, @paranoid_with_callback.called_after_commit_on_destroy
+    assert_equal 1, @paranoid_with_callback.called_before_recover
+    assert_equal 1, @paranoid_with_callback.called_after_recover
+  end
+
+  def test_recovery_callbacks_with_2_transactions
+    @paranoid_with_callback = ParanoidWithCallback.first
+
+    ParanoidWithCallback.transaction do
+      @paranoid_with_callback.destroy
+    end
+
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
+    assert_equal 0, @paranoid_with_callback.called_before_recover
+    assert_equal 0, @paranoid_with_callback.called_after_recover
+
+    ParanoidWithCallback.transaction do
+      @paranoid_with_callback.recover
+    end
+
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
+    assert_equal 1, @paranoid_with_callback.called_before_recover
+    assert_equal 1, @paranoid_with_callback.called_after_recover
+  end
+
+  def test_paranoid_destroy_with_update_callbacks
+    if ActiveRecord::VERSION::MAJOR < 5 || (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR < 1)
+      skip 'ActiveRecord versions < 5.1.0 cannot know in which transaction the record was destroyed'
+    end
+    @paranoid_with_callback = ParanoidWithCallback.first
+    ParanoidWithCallback.transaction do
+      @paranoid_with_callback.destroy
+    end
+    ParanoidWithCallback.transaction do
+      @paranoid_with_callback.update_attributes(:name => "still paranoid")
+    end
+
+    assert_equal 1, @paranoid_with_callback.called_before_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_destroy
+    assert_equal 1, @paranoid_with_callback.called_after_commit_on_destroy
   end
 
   def test_recovery_callbacks_without_destroy
     @paranoid_with_callback = ParanoidWithCallback.first
     @paranoid_with_callback.recover
 
-    assert_nil @paranoid_with_callback.called_before_recover
-    assert_nil @paranoid_with_callback.called_after_recover
+    assert_equal 0, @paranoid_with_callback.called_before_recover
+    assert_equal 0, @paranoid_with_callback.called_after_recover
   end
 
   def test_delete_by_multiple_id_is_paranoid

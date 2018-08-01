@@ -367,29 +367,26 @@ class ParanoidWithCallback < ActiveRecord::Base
   before_recover :call_me_before_recover
   after_recover :call_me_after_recover
 
-  def initialize(*attrs)
-    @called_before_destroy = @called_after_destroy = @called_after_commit_on_destroy = false
-    super(*attrs)
-  end
+  set_callback :initialize, lambda { @called_before_destroy = @called_after_destroy = @called_after_commit_on_destroy = @called_before_recover = @called_after_recover = 0 }
 
   def call_me_before_destroy
-    @called_before_destroy = true
+    @called_before_destroy += 1
   end
 
   def call_me_after_destroy
-    @called_after_destroy = true
+    @called_after_destroy += 1
   end
 
   def call_me_after_commit_on_destroy
-    @called_after_commit_on_destroy = true
+    @called_after_commit_on_destroy += 1
   end
 
   def call_me_before_recover
-    @called_before_recover = true
+    @called_before_recover += 1
   end
 
   def call_me_after_recover
-    @called_after_recover = true
+    @called_after_recover += 1
   end
 end
 
