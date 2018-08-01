@@ -451,7 +451,7 @@ class ParanoidTest < ParanoidBaseTest
       @paranoid_with_callback.destroy
     end
     ParanoidWithCallback.transaction do
-      @paranoid_with_callback.update_attributes(:name => "still paranoid")
+      @paranoid_with_callback.update(:name => "still paranoid")
     end
 
     assert_equal 1, @paranoid_with_callback.called_before_destroy

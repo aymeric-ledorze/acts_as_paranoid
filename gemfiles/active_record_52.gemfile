@@ -2,8 +2,10 @@
 
 source "https://rubygems.org"
 
+gem "activejob", "~> 5.2.0", require: "active_job"
 gem "activerecord", "~> 5.2.0", require: "active_record"
 gem "activesupport", "~> 5.2.0", require: "active_support"
+gem "activestorage", "~> 5.2.0"
 
 # Development dependencies
 group :development do

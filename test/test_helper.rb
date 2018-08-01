@@ -17,6 +17,43 @@ end
 require "acts_as_paranoid"
 require "minitest/autorun"
 
+ENABLE_ACTIVE_STORAGE = ActiveRecord::VERSION::MAJOR > 5 || (ActiveRecord::VERSION::MAJOR == 5 && ActiveRecord::VERSION::MINOR >= 2)
+if ENABLE_ACTIVE_STORAGE
+  # load ActiveStorage
+  require "global_id"
+  ActiveRecord::Base.include(GlobalID::Identification)
+  GlobalID.app = "ActsAsParanoid"
+
+  require "active_job"
+  ActiveJob::Base.queue_adapter = :test
+
+  require "active_support/cache"
+
+  require "active_storage"
+  require "active_storage/attached"
+  require "active_storage/service/disk_service"
+  if ActiveRecord::VERSION::MAJOR >= 6
+    require "active_storage/reflection"
+    ActiveRecord::Base.include(ActiveStorage::Reflection::ActiveRecordExtensions)
+    ActiveRecord::Reflection.singleton_class.prepend(ActiveStorage::Reflection::ReflectionExtension)
+    ActiveRecord::Base.include(ActiveStorage::Attached::Model)
+
+    if ActiveRecord::VERSION::MINOR == 0
+      module Rails
+        def self.autoloaders
+          Object.new.tap{|o| def o.zeitwerk_enabled?; false; end}
+        end
+      end
+    end
+  else
+    ActiveRecord::Base.extend(ActiveStorage::Attached::Macros)
+  end
+  $: << "#{Gem.loaded_specs["activestorage"].full_gem_path}/app/models/"
+  Dir.glob("#{Gem.loaded_specs["activestorage"].full_gem_path}/app/models/active_storage/*").each{|f| require f}
+  Dir.glob("#{Gem.loaded_specs["activestorage"].full_gem_path}/app/jobs/active_storage/*").each{|f| require f}
+  ActiveStorage::Blob.service = ActiveStorage::Service::DiskService.new(root: "test/tmp")
+end
+
 # Silence deprecation halfway through the test
 I18n.enforce_available_locales = true
 
@@ -231,6 +268,29 @@ def setup_db
 
       timestamps t
     end
+
+    if ENABLE_ACTIVE_STORAGE
+      create_table :active_storage_attachments do |t|
+        t.string :name, null: false
+        t.string :record_type, null: false
+        t.bigint :record_id, null: false
+        t.bigint :blob_id, null: false
+        t.datetime :created_at, null: false
+        t.index [:blob_id], name: "index_active_storage_attachments_on_blob_id"
+        t.index [:record_type, :record_id, :name, :blob_id], name: "index_active_storage_attachments_uniqueness", unique: true
+      end
+
+      create_table :active_storage_blobs do |t|
+        t.string :key, null: false
+        t.string :filename, null: false
+        t.string :content_type
+        t.text :metadata
+        t.bigint :byte_size, null: false
+        t.string :checksum, null: false
+        t.datetime :created_at, null: false
+        t.index [:key], name: "index_active_storage_blobs_on_key", unique: true
+      end
+    end
   end
 end
 # rubocop:enable Metrics/AbcSize
@@ -247,6 +307,10 @@ def teardown_db
   end
 end
 
+def clean_active_storage_attachments
+  Dir.glob("test/tmp/*").each{|f| FileUtils.rm_r(f)}
+end
+
 class ParanoidTime < ActiveRecord::Base
   acts_as_paranoid
 
@@ -260,6 +324,13 @@ class ParanoidTime < ActiveRecord::Base
   has_one :has_one_not_paranoid, dependent: :destroy
 
   belongs_to :not_paranoid, dependent: :destroy
+
+  if ENABLE_ACTIVE_STORAGE
+    has_one_attached :main_file
+    has_many_attached :files
+    has_one_attached :undependent_main_file, dependent: false
+    has_many_attached :undependent_files, dependent: false
+  end
 end
 
 class ParanoidBoolean < ActiveRecord::Base
@@ -458,6 +529,10 @@ class ParanoidHasManyAsParent < ActiveRecord::Base
 end
 
 class ParanoidBaseTest < ActiveSupport::TestCase
+  if ENABLE_ACTIVE_STORAGE
+    self.file_fixture_path = 'test/fixtures'
+  end
+
   def setup
     setup_db
 
@@ -473,6 +548,7 @@ class ParanoidBaseTest < ActiveSupport::TestCase
 
   def teardown
     teardown_db
+    clean_active_storage_attachments
   end
 
   def assert_empty(collection)
